@@ -17,6 +17,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime};
 
 const USAGE_TTL: Duration = Duration::from_secs(60);
+const USAGE_BACKOFF: Duration = Duration::from_secs(300);
 const SESSION_NAME_TTL: Duration = Duration::from_secs(60);
 const LOCK_MAX_AGE: Duration = Duration::from_secs(60);
 
@@ -193,12 +194,10 @@ fn read_tail(path: &Path, max: u64) -> Option<String> {
 fn usage_segments(data: &Value, segs: &mut Vec<String>) {
     let api = load_usage_cache();
 
-    let session = data["rate_limits"]["five_hour"]["utilization"]
-        .as_f64()
-        .or_else(|| api["five_hour"]["utilization"].as_f64());
-    let weekly = data["rate_limits"]["seven_day"]["utilization"]
-        .as_f64()
-        .or_else(|| api["seven_day"]["utilization"].as_f64());
+    let session = bucket_pct(&data["rate_limits"]["five_hour"])
+        .or_else(|| bucket_pct(&api["five_hour"]));
+    let weekly = bucket_pct(&data["rate_limits"]["seven_day"])
+        .or_else(|| bucket_pct(&api["seven_day"]));
     let fable = scoped_limit_pct(&api, "fable");
 
     for (label, pct) in [("5h", session), ("wk", weekly), ("Fable", fable)] {
@@ -208,12 +207,21 @@ fn usage_segments(data: &Value, segs: &mut Vec<String>) {
     }
 }
 
+/// Utilization of a rate-limit bucket. A 0 with no reset time is the API's
+/// "no data" placeholder, not a real zero — treat it as absent.
+fn bucket_pct(b: &Value) -> Option<f64> {
+    let p = b["utilization"].as_f64()?;
+    (p > 0.0 || !b["resets_at"].is_null()).then_some(p)
+}
+
 /// Percent for a `weekly_scoped` limit whose model display name matches.
+/// Placeholder limits (percent 0, no reset time) are skipped.
 fn scoped_limit_pct(api: &Value, model: &str) -> Option<f64> {
     api["limits"].as_array()?.iter().find_map(|l| {
         let scoped = l["kind"].as_str() == Some("weekly_scoped");
         let name = l["scope"]["model"]["display_name"].as_str().unwrap_or("");
-        (scoped && name.to_lowercase().contains(model))
+        let placeholder = l["percent"].as_f64() == Some(0.0) && l["resets_at"].is_null();
+        (scoped && !placeholder && name.to_lowercase().contains(model))
             .then(|| l["percent"].as_f64())
             .flatten()
     })
@@ -240,7 +248,8 @@ fn load_usage_cache() -> Value {
     let dir = cache_dir();
     let cache = dir.join("usage.json");
     let stale = file_age(&cache).is_none_or(|age| age > USAGE_TTL);
-    if stale && acquire_lock(&dir.join("usage.lock")) {
+    let backed_off = file_age(&dir.join("usage.backoff")).is_some_and(|age| age < USAGE_BACKOFF);
+    if stale && !backed_off && acquire_lock(&dir.join("usage.lock")) {
         spawn_self(&["--refresh-usage"]);
     }
     fs::read_to_string(&cache)
@@ -295,15 +304,52 @@ fn refresh_usage() {
         .output();
     let _ = fs::remove_file(&cfg_path);
 
+    let cache = dir.join("usage.json");
+    let mut fetched = false;
     if let Ok(out) = out {
-        if out.status.success() && serde_json::from_slice::<Value>(&out.stdout).is_ok() {
-            let tmp = dir.join("usage.json.tmp");
-            if fs::write(&tmp, &out.stdout).is_ok() {
-                let _ = fs::rename(&tmp, dir.join("usage.json"));
+        if out.status.success() {
+            if let Ok(new) = serde_json::from_slice::<Value>(&out.stdout) {
+                fetched = true;
+                if suspicious_drop(&cache, &new) {
+                    // Degraded response under rate limiting: keep the good
+                    // cache, refresh its mtime so we don't refetch in a loop.
+                    touch(&cache);
+                } else {
+                    let tmp = dir.join("usage.json.tmp");
+                    if fs::write(&tmp, &out.stdout).is_ok() {
+                        let _ = fs::rename(&tmp, &cache);
+                    }
+                }
             }
         }
     }
+    if fetched {
+        let _ = fs::remove_file(dir.join("usage.backoff"));
+    } else {
+        // Likely a 429 or outage: pause refreshes for USAGE_BACKOFF.
+        touch(&dir.join("usage.backoff"));
+    }
     let _ = fs::remove_file(&lock);
+}
+
+/// A weekly utilization that falls to 0 while its reset window is unchanged
+/// is impossible in real usage — it's a degraded/placeholder response.
+fn suspicious_drop(cache: &Path, new: &Value) -> bool {
+    let Ok(old) = fs::read_to_string(cache) else {
+        return false;
+    };
+    let old: Value = serde_json::from_str(&old).unwrap_or(Value::Null);
+    old["seven_day"]["utilization"].as_f64().unwrap_or(0.0) > 0.0
+        && new["seven_day"]["utilization"].as_f64() == Some(0.0)
+        && old["seven_day"]["resets_at"] == new["seven_day"]["resets_at"]
+}
+
+fn touch(path: &Path) {
+    if let Ok(s) = fs::read(path) {
+        let _ = fs::write(path, s);
+    } else {
+        let _ = fs::write(path, b"");
+    }
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
