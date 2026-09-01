@@ -248,7 +248,12 @@ fn load_usage_cache() -> Value {
     let dir = cache_dir();
     let cache = dir.join("usage.json");
     let stale = file_age(&cache).is_none_or(|age| age > USAGE_TTL);
-    let backed_off = file_age(&dir.join("usage.backoff")).is_some_and(|age| age < USAGE_BACKOFF);
+    // The backoff file holds a blocked-until unix timestamp (from Retry-After
+    // on a 429, or a default on other failures).
+    let backed_off = fs::read_to_string(dir.join("usage.backoff"))
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .is_some_and(|until| now_secs() < until);
     if stale && !backed_off && acquire_lock(&dir.join("usage.lock")) {
         spawn_self(&["--refresh-usage"]);
     }
@@ -298,16 +303,23 @@ fn refresh_usage() {
         return;
     }
 
+    // -D dumps response headers so a 429's Retry-After can set the backoff.
+    let hdr_path = dir.join("usage.hdr");
     let out = Command::new("curl")
-        .args(["-sf", "-m", "8", "-K"])
+        .args(["-s", "-m", "8", "-D"])
+        .arg(&hdr_path)
+        .arg("-K")
         .arg(&cfg_path)
         .output();
     let _ = fs::remove_file(&cfg_path);
+    let headers = fs::read_to_string(&hdr_path).unwrap_or_default();
+    let _ = fs::remove_file(&hdr_path);
+    let status = http_status(&headers);
 
     let cache = dir.join("usage.json");
     let mut fetched = false;
-    if let Ok(out) = out {
-        if out.status.success() {
+    if status == Some(200) {
+        if let Ok(out) = &out {
             if let Ok(new) = serde_json::from_slice::<Value>(&out.stdout) {
                 fetched = true;
                 if suspicious_drop(&cache, &new) {
@@ -326,10 +338,47 @@ fn refresh_usage() {
     if fetched {
         let _ = fs::remove_file(dir.join("usage.backoff"));
     } else {
-        // Likely a 429 or outage: pause refreshes for USAGE_BACKOFF.
-        touch(&dir.join("usage.backoff"));
+        // On 429 honor Retry-After (clamped to an hour); anything else —
+        // outage, bad response, network error — backs off the default.
+        let delay = match status {
+            Some(429) => retry_after_secs(&headers)
+                .unwrap_or(USAGE_BACKOFF.as_secs())
+                .clamp(1, 3600),
+            _ => USAGE_BACKOFF.as_secs(),
+        };
+        let _ = fs::write(
+            dir.join("usage.backoff"),
+            (now_secs() + delay).to_string(),
+        );
     }
     let _ = fs::remove_file(&lock);
+}
+
+/// Status code of the final response in a curl -D header dump (redirects
+/// produce several blocks; the last HTTP/ line wins).
+fn http_status(headers: &str) -> Option<u32> {
+    headers
+        .lines()
+        .filter(|l| l.starts_with("HTTP/"))
+        .next_back()?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
+/// Numeric Retry-After from the final header block. The HTTP-date form is
+/// rare on API rate limits and falls back to the default backoff.
+fn retry_after_secs(headers: &str) -> Option<u64> {
+    headers
+        .lines()
+        .filter_map(|l| l.split_once(':'))
+        .filter(|(k, _)| k.eq_ignore_ascii_case("retry-after"))
+        .next_back()?
+        .1
+        .trim()
+        .parse()
+        .ok()
 }
 
 /// A weekly utilization that falls to 0 while its reset window is unchanged
@@ -565,6 +614,12 @@ impl Drop for Cleanup {
 
 // ----------------------------------------------------------------- helpers
 
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 fn file_age(path: &Path) -> Option<Duration> {
     let mtime = fs::metadata(path).ok()?.modified().ok()?;
     SystemTime::now().duration_since(mtime).ok()
@@ -578,5 +633,24 @@ fn spawn_self(args: &[&str]) {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_and_retry_after_from_final_block() {
+        let h = "HTTP/1.1 301 Moved\r\nlocation: /x\r\n\r\nHTTP/2 429 \r\nretry-after: 97\r\n\r\n";
+        assert_eq!(http_status(h), Some(429));
+        assert_eq!(retry_after_secs(h), Some(97));
+    }
+
+    #[test]
+    fn http_date_retry_after_falls_back() {
+        let h = "HTTP/2 429 \r\nRetry-After: Wed, 21 Oct 2026 07:28:00 GMT\r\n\r\n";
+        assert_eq!(http_status(h), Some(429));
+        assert_eq!(retry_after_secs(h), None);
     }
 }
