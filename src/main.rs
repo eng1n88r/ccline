@@ -214,13 +214,17 @@ fn scoped_limit_pct(api: &Value, model: &str) -> Option<f64> {
 
 fn cache_dir() -> PathBuf {
     env::var_os("XDG_CACHE_HOME")
+        .or_else(|| env::var_os("LOCALAPPDATA")) // Windows
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".cache"))
         .join("ccline")
 }
 
 fn home() -> PathBuf {
-    env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_default()
 }
 
 /// Returns the cached raw usage-API response, kicking off a detached refresh
@@ -279,13 +283,14 @@ fn refresh_usage() {
 
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(path)?;
     f.write_all(bytes)
 }
 

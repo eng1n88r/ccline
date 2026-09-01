@@ -25,6 +25,12 @@ cargo source build:
 curl -fsSL https://raw.githubusercontent.com/eng1n88r/ccline/master/install.sh | bash
 ```
 
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/eng1n88r/ccline/master/install.ps1 | iex
+```
+
 Or from a checkout (needs cargo):
 
 ```sh
