@@ -17,20 +17,25 @@ Colors are 16-color ANSI only, so the line always follows the active terminal th
 
 ## Install
 
+One-liner (needs git, cargo, python3):
+
 ```sh
-make install            # builds --release, installs to ~/.local/bin/ccline
+curl -fsSL https://raw.githubusercontent.com/eng1n88r/ccline/master/install.sh | bash
 ```
 
-Then point Claude Code at it in `~/.claude/settings.json`:
+Or from a checkout:
 
-```json
-"statusLine": {
-  "type": "command",
-  "command": "/home/YOU/.local/bin/ccline",
-  "padding": 0,
-  "refreshInterval": 10
-}
+```sh
+make install
 ```
+
+Either way the install is idempotent and does three things:
+
+1. Removes any existing ccstatusline install (npm global package, `~/.config/ccstatusline`,
+   `~/.cache/ccstatusline`, stale mise shims).
+2. Builds and installs the binary to `~/.local/bin/ccline` (override with `PREFIX=`).
+3. Points `statusLine.command` in `~/.claude/settings.json` at it, preserving all other
+   settings (new sessions pick it up immediately; running ones after a restart).
 
 `make uninstall` removes the binary; `make check` runs fmt + clippy.
 
