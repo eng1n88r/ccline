@@ -47,6 +47,16 @@ Either way the install is idempotent and does three things:
 
 `make uninstall` removes the binary; `make check` runs fmt + clippy.
 
+## Update
+
+```sh
+ccline update
+```
+
+Compares the running version against the latest GitHub release and, if newer,
+downloads the prebuilt binary for this platform and replaces the executable in
+place (`ccline --version` to check). Re-running the install one-liner works too.
+
 ## Design
 
 The render path never touches the network and never spawns anything slower than git.
