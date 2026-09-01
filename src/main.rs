@@ -249,11 +249,29 @@ fn load_usage_cache() -> Value {
         .unwrap_or(Value::Null)
 }
 
+/// Raw credentials JSON: `~/.claude/.credentials.json`, with the macOS
+/// Keychain (where Claude Code stores it there) as fallback.
+fn read_credentials() -> String {
+    if let Ok(s) = fs::read_to_string(home().join(".claude/.credentials.json")) {
+        return s;
+    }
+    if cfg!(target_os = "macos") {
+        if let Ok(out) = Command::new("security")
+            .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+            .output()
+        {
+            if out.status.success() {
+                return String::from_utf8_lossy(&out.stdout).into_owned();
+            }
+        }
+    }
+    String::new()
+}
+
 fn refresh_usage() {
     let dir = cache_dir();
     let lock = dir.join("usage.lock");
-    let creds = fs::read_to_string(home().join(".claude/.credentials.json")).unwrap_or_default();
-    let creds: Value = serde_json::from_str(&creds).unwrap_or(Value::Null);
+    let creds: Value = serde_json::from_str(&read_credentials()).unwrap_or(Value::Null);
     let Some(token) = creds["claudeAiOauth"]["accessToken"].as_str() else {
         let _ = fs::remove_file(&lock);
         return;

@@ -10,7 +10,8 @@ build:
 # Idempotent: removes any ccstatusline install, (re)installs the binary, and
 # points Claude Code's statusLine at it. Safe to run repeatedly.
 install: build purge-ccstatusline
-	install -Dm755 target/release/ccline $(BINDIR)/ccline
+	mkdir -p $(BINDIR)
+	install -m755 target/release/ccline $(BINDIR)/ccline
 	@$(MAKE) --no-print-directory configure
 	@echo "ccline installed to $(BINDIR)/ccline"
 
