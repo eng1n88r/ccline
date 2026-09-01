@@ -51,6 +51,9 @@ fn render() {
         segs.push(seg);
     }
     usage_segments(&data, &mut segs);
+    if let Some(repo) = repo_name(&data) {
+        segs.push(format!("\x1b[1;34m{repo}\x1b[0m"));
+    }
     git_segments(&data, &mut segs);
 
     // Single row; Claude Code trims each line, so leading padding is moot.
@@ -302,6 +305,16 @@ fn acquire_lock(lock: &Path) -> bool {
 }
 
 // --------------------------------------------------------------------- git
+
+/// Basename of the project dir (the repo name for git projects).
+fn repo_name(data: &Value) -> Option<String> {
+    let dir = data["workspace"]["project_dir"]
+        .as_str()
+        .or_else(|| data["workspace"]["current_dir"].as_str())
+        .or_else(|| data["cwd"].as_str())?;
+    let name = Path::new(dir).file_name()?.to_string_lossy();
+    (!name.is_empty()).then(|| name.into_owned())
+}
 
 fn git_segments(data: &Value, segs: &mut Vec<String>) {
     let dir = data["workspace"]["current_dir"]
