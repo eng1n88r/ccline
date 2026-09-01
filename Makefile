@@ -14,12 +14,21 @@ install: build purge-ccstatusline
 	@$(MAKE) --no-print-directory configure
 	@echo "ccline installed to $(BINDIR)/ccline"
 
-# Remove the npm ccstatusline package (if present) and its config/cache.
+# Remove any ccstatusline install (npm global, bun global, bunx cache) plus
+# its config/cache.
 purge-ccstatusline:
 	@if command -v npm >/dev/null 2>&1 && npm ls -g ccstatusline >/dev/null 2>&1; then \
 		echo "removing ccstatusline npm package"; \
 		npm uninstall -g ccstatusline >/dev/null; \
 	fi
+	@if command -v bun >/dev/null 2>&1; then \
+		if bun pm ls -g 2>/dev/null | grep -q ccstatusline; then \
+			echo "removing ccstatusline bun global"; \
+			bun remove -g ccstatusline >/dev/null 2>&1; \
+		fi; \
+		rm -rf $(HOME)/.bun/install/cache/ccstatusline*; \
+	fi
+	@rm -rf "$${TMPDIR:-/tmp}"/bunx-*-ccstatusline@*
 	@rm -rf $(HOME)/.config/ccstatusline $(HOME)/.cache/ccstatusline
 	@if command -v mise >/dev/null 2>&1; then mise reshim; fi
 
