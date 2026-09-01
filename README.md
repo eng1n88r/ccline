@@ -17,13 +17,15 @@ Colors are 16-color ANSI only, so the line always follows the active terminal th
 
 ## Install
 
-One-liner (needs git, cargo, python3):
+One-liner — downloads the prebuilt static binary for your platform (Linux
+x86_64/aarch64, macOS arm64/x86_64) from the latest release, falling back to a
+cargo source build:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/eng1n88r/ccline/master/install.sh | bash
 ```
 
-Or from a checkout:
+Or from a checkout (needs cargo):
 
 ```sh
 make install
