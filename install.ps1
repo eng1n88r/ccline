@@ -23,11 +23,11 @@ $exe = Join-Path $binDir "ccline.exe"
 # so hand it a forward-slash path — which both bash and PowerShell accept.
 # Neither shell tolerates an unquoted space, so fall back to the 8.3 short path
 # when the profile directory has one (quoting would break the PowerShell case).
-$cmdPath = $exe.Replace("\\", "/")
+$cmdPath = $exe.Replace("\", "/")
 if ($cmdPath -match " ") {
     try {
         $short = (New-Object -ComObject Scripting.FileSystemObject).GetFile($exe).ShortPath
-        if ($short -and $short -notmatch " ") { $cmdPath = $short.Replace("\\", "/") }
+        if ($short -and $short -notmatch " ") { $cmdPath = $short.Replace("\", "/") }
     } catch {}
 }
 
