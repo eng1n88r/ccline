@@ -10,9 +10,24 @@ $binDir = Join-Path $env:LOCALAPPDATA "ccline"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 
 $zip = Join-Path $env:TEMP "ccline.zip"
-$url = "https://github.com/$repo/releases/latest/download/ccline-x86_64-pc-windows-msvc.zip"
-Write-Host "downloading $url"
-Invoke-WebRequest -Uri $url -OutFile $zip
+$sums = Join-Path $env:TEMP "ccline.zip.sha256"
+$base = "https://github.com/$repo/releases/latest/download/ccline-x86_64-pc-windows-msvc"
+Write-Host "downloading $base.zip"
+Invoke-WebRequest -Uri "$base.zip" -OutFile $zip
+
+# The archive is executable code, so check it against the checksum the release
+# workflow published beside it before expanding anything. $ErrorActionPreference
+# is Stop, so a missing checksum asset aborts rather than silently skipping this.
+Invoke-WebRequest -Uri "$base.sha256" -OutFile $sums
+$expected = (((Get-Content $sums -Raw).Trim()) -split "\s+")[0]
+$actual = (Get-FileHash $zip -Algorithm SHA256).Hash
+if ($actual -ne $expected) {
+    Remove-Item $zip, $sums -Force
+    throw "checksum mismatch for ccline.zip: expected $expected, got $actual"
+}
+Remove-Item $sums
+Write-Host "sha256 verified: $actual"
+
 Expand-Archive -Path $zip -DestinationPath $binDir -Force
 Remove-Item $zip
 
