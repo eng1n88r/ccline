@@ -135,9 +135,9 @@ pub(crate) fn refresh_usage() {
 
     let cache = dir.join("usage.json");
     let mut fetched = false;
-    if status == Some(200) {
-        if let Ok(out) = &out {
-            if let Ok(new) = serde_json::from_slice::<Value>(&out.stdout) {
+    if status == Some(200)
+        && let Ok(out) = &out
+            && let Ok(new) = serde_json::from_slice::<Value>(&out.stdout) {
                 fetched = true;
                 if suspicious_drop(&cache, &new) {
                     // Degraded response under rate limiting: keep the good
@@ -150,8 +150,6 @@ pub(crate) fn refresh_usage() {
                     }
                 }
             }
-        }
-    }
     if fetched {
         let _ = fs::remove_file(dir.join("usage.backoff"));
     } else {
