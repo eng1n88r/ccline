@@ -1,9 +1,9 @@
+use crate::util::{file_age, spawn_self};
 use serde_json::Value;
 use std::env;
 use std::fs;
 use std::process::Command;
 use std::time::Duration;
-use crate::util::{file_age, spawn_self};
 
 const SESSION_NAME_TTL: Duration = Duration::from_secs(60);
 
@@ -41,4 +41,3 @@ pub(crate) fn refresh_session_name(sid: Option<&str>) {
         .unwrap_or("");
     let _ = fs::write(&cache, name);
 }
-

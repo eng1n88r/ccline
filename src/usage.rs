@@ -137,19 +137,20 @@ pub(crate) fn refresh_usage() {
     let mut fetched = false;
     if status == Some(200)
         && let Ok(out) = &out
-            && let Ok(new) = serde_json::from_slice::<Value>(&out.stdout) {
-                fetched = true;
-                if suspicious_drop(&cache, &new) {
-                    // Degraded response under rate limiting: keep the good
-                    // cache, refresh its mtime so we don't refetch in a loop.
-                    touch(&cache);
-                } else {
-                    let tmp = dir.join("usage.json.tmp");
-                    if fs::write(&tmp, &out.stdout).is_ok() {
-                        let _ = fs::rename(&tmp, &cache);
-                    }
-                }
+        && let Ok(new) = serde_json::from_slice::<Value>(&out.stdout)
+    {
+        fetched = true;
+        if suspicious_drop(&cache, &new) {
+            // Degraded response under rate limiting: keep the good
+            // cache, refresh its mtime so we don't refetch in a loop.
+            touch(&cache);
+        } else {
+            let tmp = dir.join("usage.json.tmp");
+            if fs::write(&tmp, &out.stdout).is_ok() {
+                let _ = fs::rename(&tmp, &cache);
             }
+        }
+    }
     if fetched {
         let _ = fs::remove_file(dir.join("usage.backoff"));
     } else {
@@ -170,7 +171,8 @@ pub(crate) fn refresh_usage() {
 /// produce several blocks; the last HTTP/ line wins).
 pub(crate) fn http_status(headers: &str) -> Option<u32> {
     headers
-        .lines().rfind(|l| l.starts_with("HTTP/"))?
+        .lines()
+        .rfind(|l| l.starts_with("HTTP/"))?
         .split_whitespace()
         .nth(1)?
         .parse()
@@ -182,7 +184,8 @@ pub(crate) fn http_status(headers: &str) -> Option<u32> {
 pub(crate) fn retry_after_secs(headers: &str) -> Option<u64> {
     headers
         .lines()
-        .filter_map(|l| l.split_once(':')).rfind(|(k, _)| k.eq_ignore_ascii_case("retry-after"))?
+        .filter_map(|l| l.split_once(':'))
+        .rfind(|(k, _)| k.eq_ignore_ascii_case("retry-after"))?
         .1
         .trim()
         .parse()

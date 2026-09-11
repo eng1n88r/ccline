@@ -1,4 +1,3 @@
-
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,4 +32,3 @@ pub(crate) fn home() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_default()
 }
-

@@ -62,4 +62,3 @@ fn read_tail(path: &Path, max: u64) -> Option<String> {
     f.read_to_end(&mut buf).ok()?;
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
-

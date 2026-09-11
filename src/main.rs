@@ -11,21 +11,23 @@
 use serde_json::Value;
 use std::env;
 use std::io::Read;
-use style::dim ;
+use style::dim;
 
-mod git;
-mod update;
-mod style;
-mod util;
-mod session;
 mod context;
+mod git;
+mod session;
+mod style;
+mod update;
 mod usage;
+mod util;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("--refresh-usage") => usage::refresh_usage(),
-        Some("--refresh-session-name") => session::refresh_session_name(args.get(2).map(String::as_str)),
+        Some("--refresh-session-name") => {
+            session::refresh_session_name(args.get(2).map(String::as_str))
+        }
         Some("update" | "--update") => {
             if let Err(e) = update::run() {
                 eprintln!("update failed: {e}");
@@ -67,4 +69,3 @@ fn render() {
     // Single row; Claude Code trims each line, so leading padding is moot.
     println!("{}", segs.join(&dim(" │ ")));
 }
-

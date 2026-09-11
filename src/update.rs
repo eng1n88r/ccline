@@ -51,8 +51,7 @@ pub(crate) fn run() -> Result<(), String> {
 
     let target = release_target().ok_or("no prebuilt release for this platform")?;
     let ext = if cfg!(windows) { "zip" } else { "tar.gz" };
-    let url =
-        format!("https://github.com/{REPO}/releases/latest/download/ccline-{target}.{ext}");
+    let url = format!("https://github.com/{REPO}/releases/latest/download/ccline-{target}.{ext}");
     println!("downloading {url}");
     let archive = tmp.join(format!("ccline.{ext}"));
     curl(&tmp, &["-o", &archive.to_string_lossy(), &url])?;
@@ -69,7 +68,11 @@ pub(crate) fn run() -> Result<(), String> {
         return Err("tar extraction failed".into());
     }
 
-    let new_bin = tmp.join(if cfg!(windows) { "ccline.exe" } else { "ccline" });
+    let new_bin = tmp.join(if cfg!(windows) {
+        "ccline.exe"
+    } else {
+        "ccline"
+    });
     let exe = env::current_exe().map_err(|e| e.to_string())?;
     replace_exe(&new_bin, &exe)?;
     println!("updated ccline {current} -> {latest} at {}", exe.display());
@@ -126,4 +129,3 @@ impl Drop for Cleanup {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-
