@@ -20,11 +20,92 @@ pub(crate) fn usage_segments(data: &Value, segs: &mut Vec<String>) {
     let weekly =
         bucket_pct(&data["rate_limits"]["seven_day"]).or_else(|| bucket_pct(&api["seven_day"]));
     let fable = scoped_limit_pct(&api, "fable");
+    // Weekly reset countdown, shown after the weekly percent.
+    let weekly_reset = reset_epoch(&data["rate_limits"]["seven_day"]["resets_at"])
+        .or_else(|| reset_epoch(&api["seven_day"]["resets_at"]))
+        .map(|t| fmt_countdown(t.saturating_sub(now_secs())));
 
-    for (label, pct) in [("5h", session), ("wk", weekly), ("Fable", fable)] {
+    for (label, pct, extra) in [
+        ("5h", session, None),
+        ("wk", weekly, weekly_reset),
+        ("Fable", fable, None),
+    ] {
         if let Some(p) = pct {
-            segs.push(format!("{} {}{:.0}%\x1b[0m", dim(label), pct_color(p), p));
+            let mut seg = format!("{} {}{:.0}%\x1b[0m", dim(label), pct_color(p), p);
+            if let Some(e) = extra {
+                seg.push(' ');
+                seg.push_str(&dim(&e));
+            }
+            segs.push(seg);
         }
+    }
+}
+
+/// `resets_at` as unix seconds. The usage API sends RFC 3339 strings; the
+/// stdin payload may send a number (seconds or milliseconds).
+fn reset_epoch(v: &Value) -> Option<u64> {
+    match v {
+        Value::String(s) => parse_rfc3339(s),
+        Value::Number(n) => {
+            let t = n.as_f64()?;
+            (t > 0.0).then(|| if t > 1e11 { t / 1000.0 } else { t } as u64)
+        }
+        _ => None,
+    }
+}
+
+/// Minimal RFC 3339 → unix seconds: `YYYY-MM-DDThh:mm:ss[.frac](Z|±hh:mm)`.
+/// Fractional seconds are dropped; no external deps on the render path.
+fn parse_rfc3339(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let num = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
+    if s.len() < 19 || s.as_bytes().get(10).copied() != Some(b'T') {
+        return None;
+    }
+    let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let (h, mi, sec) = (num(11..13)?, num(14..16)?, num(17..19)?);
+    let rest = &s[19..];
+    let rest = match rest.find(|c| c != '.' && !char::is_ascii_digit(&c)) {
+        Some(i) if rest.starts_with('.') => &rest[i..],
+        Some(_) => rest,
+        None => return None,
+    };
+    let offset = match rest {
+        "Z" | "z" => 0,
+        _ => {
+            let sign = match rest.as_bytes().first()? {
+                b'+' => 1,
+                b'-' => -1,
+                _ => return None,
+            };
+            let oh = rest.get(1..3)?.parse::<i64>().ok()?;
+            let om = rest.get(4..6)?.parse::<i64>().ok()?;
+            sign * (oh * 3600 + om * 60)
+        }
+    };
+    // Howard Hinnant's days-from-civil.
+    let (y, mo) = if mo <= 2 {
+        (y - 1, mo + 9)
+    } else {
+        (y, mo - 3)
+    };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * mo + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let t = days * 86_400 + h * 3600 + mi * 60 + sec - offset;
+    u64::try_from(t).ok()
+}
+
+/// Compact countdown: `2d4h`, `3h12m`, `45m`, or `now` once elapsed.
+fn fmt_countdown(secs: u64) -> String {
+    let (d, h, m) = (secs / 86_400, secs % 86_400 / 3600, secs % 3600 / 60);
+    match (d, h, m) {
+        (0, 0, 0) => "now".into(),
+        (0, 0, m) => format!("{m}m"),
+        (0, h, m) => format!("{h}h{m:02}m"),
+        (d, h, _) => format!("{d}d{h}h"),
     }
 }
 
@@ -250,6 +331,43 @@ mod tests {
         let h = "HTTP/1.1 301 Moved\r\nlocation: /x\r\n\r\nHTTP/2 429 \r\nretry-after: 97\r\n\r\n";
         assert_eq!(http_status(h), Some(429));
         assert_eq!(retry_after_secs(h), Some(97));
+    }
+
+    #[test]
+    fn rfc3339_with_fraction_and_offset() {
+        assert_eq!(
+            parse_rfc3339("2026-09-13T06:00:00.758527+00:00"),
+            Some(1_789_279_200)
+        );
+        assert_eq!(parse_rfc3339("2026-09-13T06:00:00Z"), Some(1_789_279_200));
+        assert_eq!(
+            parse_rfc3339("2026-09-13T08:00:00+02:00"),
+            Some(1_789_279_200)
+        );
+        assert_eq!(parse_rfc3339("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(parse_rfc3339("2026-09-13 06:00:00Z"), None);
+        assert_eq!(parse_rfc3339("garbage"), None);
+    }
+
+    #[test]
+    fn reset_epoch_accepts_numbers() {
+        assert_eq!(
+            reset_epoch(&serde_json::json!(1_789_279_200)),
+            Some(1_789_279_200)
+        );
+        assert_eq!(
+            reset_epoch(&serde_json::json!(1_789_279_200_000u64)),
+            Some(1_789_279_200)
+        );
+        assert_eq!(reset_epoch(&Value::Null), None);
+    }
+
+    #[test]
+    fn countdown_formats() {
+        assert_eq!(fmt_countdown(0), "now");
+        assert_eq!(fmt_countdown(45 * 60), "45m");
+        assert_eq!(fmt_countdown(3 * 3600 + 12 * 60), "3h12m");
+        assert_eq!(fmt_countdown(2 * 86_400 + 4 * 3600 + 59 * 60), "2d4h");
     }
 
     #[test]

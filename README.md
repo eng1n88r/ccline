@@ -4,11 +4,12 @@ A fast, single-binary statusline for [Claude Code](https://code.claude.com), wri
 Rust as a replacement for the npm `ccstatusline` (~535 ms per render → ~5–20 ms, no Node).
 
 ```
-Fable 5 │ v2.1.252 │ src-09 │ 96.3k 10% │ 5h 63% │ wk 22% │ Fable 26% │  main │ +5 -2
+Fable 5 │ v2.1.252 │ src-09 │ 96.3k 10% │ 5h 63% │ wk 22% 2d4h │ Fable 26% │  main │ +5 -2
 ```
 
 Widgets, left to right: model name, Claude Code version, session name, context usage
-(tokens + % of window), 5-hour rate limit, weekly rate limit, Fable weekly limit,
+(tokens + % of window), 5-hour rate limit, weekly rate limit with a countdown to its
+reset, Fable weekly limit,
 git branch, and uncommitted diff stats. Widgets whose data is unavailable are simply
 omitted.
 
