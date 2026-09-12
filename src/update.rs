@@ -5,18 +5,6 @@ use std::process::Command;
 
 const REPO: &str = "eng1n88r/ccline";
 
-/// Release asset target triple for the running platform, matching the CI matrix.
-fn release_target() -> Option<&'static str> {
-    Some(match (env::consts::OS, env::consts::ARCH) {
-        ("linux", "x86_64") => "x86_64-unknown-linux-musl",
-        ("linux", "aarch64") => "aarch64-unknown-linux-musl",
-        ("macos", "x86_64") => "x86_64-apple-darwin",
-        ("macos", "aarch64") => "aarch64-apple-darwin",
-        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
-        _ => return None,
-    })
-}
-
 /// `ccline update`: download the latest release binary and replace this
 /// executable in place.
 pub(crate) fn run() -> Result<(), String> {
@@ -77,6 +65,18 @@ pub(crate) fn run() -> Result<(), String> {
     replace_exe(&new_bin, &exe)?;
     println!("updated ccline {current} -> {latest} at {}", exe.display());
     Ok(())
+}
+
+/// Release asset target triple for the running platform, matching the CI matrix.
+fn release_target() -> Option<&'static str> {
+    Some(match (env::consts::OS, env::consts::ARCH) {
+        ("linux", "x86_64") => "x86_64-unknown-linux-musl",
+        ("linux", "aarch64") => "aarch64-unknown-linux-musl",
+        ("macos", "x86_64") => "x86_64-apple-darwin",
+        ("macos", "aarch64") => "aarch64-apple-darwin",
+        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
+        _ => return None,
+    })
 }
 
 /// "1.2.10" -> (1, 2, 10), for ordered version comparison.

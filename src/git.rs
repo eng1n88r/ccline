@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 /// Basename of the project dir (the repo name for git projects).
-pub fn repo_name(data: &Value) -> Option<String> {
+pub(crate) fn repo_name(data: &Value) -> Option<String> {
     let dir = data["workspace"]["project_dir"]
         .as_str()
         .or_else(|| data["workspace"]["current_dir"].as_str())
@@ -12,7 +12,7 @@ pub fn repo_name(data: &Value) -> Option<String> {
     (!name.is_empty()).then(|| name.into_owned())
 }
 
-pub fn git_segments(data: &Value, segs: &mut Vec<String>) {
+pub(crate) fn git_segments(data: &Value, segs: &mut Vec<String>) {
     let dir = data["workspace"]["current_dir"]
         .as_str()
         .or_else(|| data["cwd"].as_str())

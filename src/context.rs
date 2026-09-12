@@ -1,8 +1,9 @@
-use crate::style::{fmt_tokens, pct_color};
 use serde_json::Value;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+
+use crate::style::{fmt_tokens, pct_color};
 
 pub(crate) fn context_segment(data: &Value) -> Option<String> {
     let cw = &data["context_window"];

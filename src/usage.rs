@@ -1,11 +1,12 @@
-use crate::style::{dim, pct_color};
-use crate::util::{file_age, home, now_secs, spawn_self};
 use serde_json::Value;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
+
+use crate::style::{dim, pct_color};
+use crate::util::{file_age, home, now_secs, spawn_self};
 
 const USAGE_TTL: Duration = Duration::from_secs(60);
 const USAGE_BACKOFF: Duration = Duration::from_secs(300);

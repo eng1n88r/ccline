@@ -39,8 +39,6 @@ fn main() {
     }
 }
 
-// ---------------------------------------------------------------- rendering
-
 fn render() {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
