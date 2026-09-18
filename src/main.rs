@@ -13,6 +13,7 @@ use std::env;
 use std::io::Read;
 use style::dim;
 
+mod codename;
 mod context;
 mod git;
 mod session;
@@ -35,6 +36,13 @@ fn main() {
             }
         }
         Some("--version" | "-V") => println!("ccline {}", env!("CARGO_PKG_VERSION")),
+        // Easter egg, deliberately undocumented: toggle model codenames.
+        Some("codename") => {
+            if let Err(e) = codename::run(&args[2..]) {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
         _ => render(),
     }
 }
@@ -47,6 +55,7 @@ fn render() {
     let mut segs: Vec<String> = Vec::with_capacity(9);
 
     if let Some(model) = data["model"]["display_name"].as_str() {
+        let model = codename::apply(model);
         segs.push(format!("\x1b[1;36m{model}\x1b[0m"));
     }
     if let Some(v) = data["version"].as_str() {

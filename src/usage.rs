@@ -25,10 +25,11 @@ pub(crate) fn usage_segments(data: &Value, segs: &mut Vec<String>) {
         .or_else(|| reset_epoch(&api["seven_day"]["resets_at"]))
         .map(|t| fmt_countdown(t.saturating_sub(now_secs())));
 
+    let fable_label = crate::codename::apply("Fable");
     for (label, pct, extra) in [
         ("5h", session, None),
         ("wk", weekly, weekly_reset),
-        ("Fable", fable, None),
+        (fable_label.as_str(), fable, None),
     ] {
         if let Some(p) = pct {
             let mut seg = format!("{} {}{:.0}%\x1b[0m", dim(label), pct_color(p), p);
