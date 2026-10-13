@@ -26,6 +26,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("--refresh-usage") => usage::refresh_usage(),
+        Some("--usage-status") => usage::usage_status(),
         Some("--refresh-session-name") => {
             session::refresh_session_name(args.get(2).map(String::as_str))
         }
