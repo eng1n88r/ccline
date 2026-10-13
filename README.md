@@ -65,11 +65,20 @@ Slow data sources are refreshed by detached background re-invocations of the bin
 so a render always returns immediately with last-known values:
 
 - `ccline --refresh-usage` — fetches `https://api.anthropic.com/api/oauth/usage`
-  with the OAuth token from `~/.claude/.credentials.json` (passed to curl via a
-  0600 config file, never argv). Cached at `~/.cache/ccline/usage.json`, 60 s TTL,
-  with a lock file to prevent refresh stampedes. This is the only source for the
-  Fable weekly-scoped limit; the 5 h/weekly numbers prefer the `rate_limits` object
-  Claude Code pipes in on stdin and use the cache as fallback.
+  with Claude Code's OAuth token (passed to curl via a 0600 config file, never
+  argv). Every credential store is read — the macOS Keychain and the legacy
+  `~/.claude/.credentials.json` — expired tokens are dropped, and the one with the
+  latest expiry is tried first; a 401/403/429 moves on to the next store before
+  backing off, so a stale leftover file can't pin the refresh to a dead token.
+  Cached at `~/.cache/ccline/usage.json`, 60 s TTL, with a lock file to prevent
+  refresh stampedes. This is the only source for the Fable weekly-scoped limit;
+  the 5 h/weekly numbers prefer the `rate_limits` object Claude Code pipes in on
+  stdin and use the cache as fallback. Once the cache is over 30 min old, the
+  segments it feeds get a `?` suffix (`wk 22%?`) so a refresh that keeps failing
+  is visible rather than silently serving old numbers.
+- `ccline --usage-status` — prints the cache age, backoff state, last refresh
+  error, which credential stores are usable (never the tokens), and the cached
+  numbers. First stop when the usage segments look wrong.
 - `ccline --refresh-session-name <sid>` — resolves the session's auto-assigned name
   via `claude agents --json`, cached at `$TMPDIR/cc-session-name-<sid>.txt`, 60 s TTL.
 
