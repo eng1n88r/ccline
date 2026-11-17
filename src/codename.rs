@@ -3,8 +3,9 @@
 // `ccline codename` (undocumented on purpose) toggles the feature; the map
 // lives in a small JSON file under the config dir and survives toggling off.
 // When enabled, the model widget shows the codename instead of the display
-// name ("Opus 5" → "Clanker"). The Fable weekly-limit label follows the
-// same map.
+// name: the current version of a family gets the bare codename
+// ("Opus 5.5" → "Clanker"), older ones keep their version ("Opus 4.8" →
+// "Clanker 4.8"). The Fable weekly-limit label follows the same map.
 
 use serde_json::{Map, Value, json};
 use std::env;
@@ -13,12 +14,30 @@ use std::path::PathBuf;
 
 use crate::util::home;
 
-const DEFAULTS: [(&str, &str); 4] = [
+const DEFAULTS: [(&str, &str); 5] = [
     ("haiku", "Toaster"),
     ("sonnet", "Scrappy"),
     ("opus", "Clanker"),
     ("fable", "Omnissiah"),
+    ("mythos", "Basilisk"),
 ];
+
+/// Current version per family; it renders as the bare codename, any other
+/// version keeps its number. Bump when a new model generation ships.
+const CURRENT: [(&str, &str); 5] = [
+    ("haiku", "5.5"),
+    ("sonnet", "5.5"),
+    ("opus", "5.5"),
+    ("fable", "5.2"),
+    ("mythos", "5.2"),
+];
+
+/// The version token of a display name: "Claude Opus 4.8 (1M)" → "4.8".
+fn version_of(name: &str) -> Option<&str> {
+    name.split_whitespace()
+        .find(|t| t.starts_with(|c: char| c.is_ascii_digit()))
+        .map(|t| t.trim_end_matches(|c: char| !c.is_ascii_digit()))
+}
 
 fn config_path() -> PathBuf {
     env::var_os("XDG_CONFIG_HOME")
@@ -85,7 +104,9 @@ pub(crate) fn apply(name: &str) -> String {
 }
 
 /// Case-insensitive match of a family key anywhere in `name`; the whole
-/// display name becomes the codename (no version suffix).
+/// display name becomes the codename, plus the version when it isn't the
+/// family's current one. Families without a known current version (custom
+/// ones) and names without a version get the bare codename.
 fn rewrite(name: &str, map: &Map<String, Value>) -> String {
     let lower = name.to_lowercase();
     // Longest key first so "opus" can't shadow a hypothetical "opus-mini".
@@ -95,9 +116,15 @@ fn rewrite(name: &str, map: &Map<String, Value>) -> String {
         .filter(|(k, _)| !k.is_empty())
         .collect();
     keys.sort_by_key(|(k, _)| std::cmp::Reverse(k.len()));
-    keys.into_iter()
-        .find(|(k, _)| lower.contains(k.as_str()))
-        .map_or_else(|| name.to_string(), |(_, codename)| codename.to_string())
+    let Some((family, codename)) = keys.into_iter().find(|(k, _)| lower.contains(k.as_str()))
+    else {
+        return name.to_string();
+    };
+    let current = CURRENT.iter().find(|(k, _)| *k == family).map(|(_, v)| *v);
+    match (version_of(name), current) {
+        (Some(v), Some(cur)) if v != cur => format!("{codename} {v}"),
+        _ => codename.to_string(),
+    }
 }
 
 /// `ccline codename` toggles the feature; subcommands edit the map.
@@ -165,24 +192,32 @@ mod tests {
     #[test]
     fn rewrites_whole_name() {
         let m = Config::defaults().names;
-        assert_eq!(rewrite("Opus 5", &m), "Clanker");
-        assert_eq!(rewrite("Fable 5.1", &m), "Omnissiah");
-        assert_eq!(rewrite("Claude Haiku 4.5", &m), "Toaster");
+        assert_eq!(rewrite("Opus 5.5", &m), "Clanker");
+        assert_eq!(rewrite("Fable 5.2", &m), "Omnissiah");
+        assert_eq!(rewrite("Claude Haiku 5.5", &m), "Toaster");
+        assert_eq!(rewrite("Mythos 5.2", &m), "Basilisk");
         assert_eq!(rewrite("Fable", &m), "Omnissiah");
     }
 
     #[test]
+    fn older_versions_keep_their_number() {
+        let m = Config::defaults().names;
+        assert_eq!(rewrite("Opus 5", &m), "Clanker 5");
+        assert_eq!(rewrite("Opus 4.8", &m), "Clanker 4.8");
+        assert_eq!(rewrite("Fable 5.1", &m), "Omnissiah 5.1");
+        assert_eq!(rewrite("Claude Haiku 4.5", &m), "Toaster 4.5");
+        assert_eq!(rewrite("Sonnet 4.6 (1M context)", &m), "Scrappy 4.6");
+    }
+
+    #[test]
     fn unknown_names_pass_through() {
-        assert_eq!(
-            rewrite("Mythos 5.1", &Config::defaults().names),
-            "Mythos 5.1"
-        );
+        assert_eq!(rewrite("Gizmo 5.1", &Config::defaults().names), "Gizmo 5.1");
     }
 
     #[test]
     fn custom_family_and_case_insensitive_keys() {
         let mut m = Map::new();
-        m.insert("MYTHOS".into(), Value::String("Basilisk".into()));
-        assert_eq!(rewrite("Mythos 5.1", &m), "Basilisk");
+        m.insert("GIZMO".into(), Value::String("Sparky".into()));
+        assert_eq!(rewrite("Gizmo 5.1", &m), "Sparky");
     }
 }
